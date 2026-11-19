@@ -1,0 +1,27 @@
+number,category,reason
+1,bug,Trình soạn biểu mẫu báo lỗi xác thực phương án trả lời khi lưu.
+2,bug,Không lưu được biểu mẫu COVID sau khi đã bắt đầu lượt khám.
+3,bug,Biểu mẫu cho phép chọn đồng thời có sốt và không sốt.
+4,change,Đề nghị bỏ tùy chọn nhập viện nội trú trên hai biểu mẫu.
+5,change,Đề nghị đổi chiều cao và cân nặng sang đơn vị phi mét.
+6,insufficient,Tiêu đề báo lỗi đăng ký nhưng mô tả không ghi rõ triệu chứng. Phản hồi cho biết chưa tái hiện được lỗi.
+7,change,Đề nghị dùng UUID thay mã khái niệm cục bộ trong biểu mẫu.
+8,change,Tiêu đề nêu yêu cầu thêm mục dị ứng thuốc.
+9,bug,Chức năng bắt buộc đổi mật khẩu không hoạt động theo báo cáo.
+10,bug,Thao tác đánh dấu người bệnh đã tử vong báo lỗi.
+11,bug,Không bấm được nút xác nhận hoặc lưu khi sửa thông tin người thân.
+12,insufficient,Mô tả nêu phản hồi khó hiểu khi đính kèm. Phản hồi xác nhận bản triển khai không hỗ trợ đính kèm nên chưa rõ cần sửa hành vi nào.
+13,change,Đề nghị đổi ký hiệu ở câu hỏi đã xét nghiệm thành chữ Có và Không.
+14,change,Đề nghị ghi rõ Dương tính và Âm tính thay ký hiệu kết quả xét nghiệm.
+15,bug,Nội dung báo thao tác đăng nhập sai mật khẩu không hiện thông báo lỗi.
+16,bug,Luồng bắt buộc đổi mật khẩu không hoạt động dù người dùng tự đổi được.
+17,change,Đề nghị thêm hội chứng do vi-rút vào danh sách chọn trên biểu mẫu.
+18,change,Đề nghị tăng giới hạn nhập nhiệt độ lên 50 độ C.
+19,change,Đề nghị ghi thêm vị trí đo nhiệt độ.
+20,change,Đề nghị nhập chiều cao theo feet và inch thay cho cm.
+21,change,Đề nghị chấp nhận giá trị Palp khi không nghe được huyết áp tâm trương.
+22,change,Đề nghị thêm ô ghi loại oxy bổ sung bên cạnh độ bão hòa oxy.
+23,change,Đề nghị thêm mất khứu giác và mất vị giác vào danh sách triệu chứng.
+24,bug,Người dùng có thể chọn cả Có và Không cho cùng một dấu hiệu khám.
+25,change,Đề nghị tự tạo định danh tạm khi chưa xác định được danh tính.
+26,change,Đề nghị bỏ hoặc ẩn nút nhập viện nội trú.

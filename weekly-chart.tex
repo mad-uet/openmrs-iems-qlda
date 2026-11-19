@@ -1,0 +1,29 @@
+\documentclass[border=4pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{Latin Modern Sans}
+\usepackage{pgfplotstable}
+\pgfplotsset{compat=1.18}
+\definecolor{creation}{HTML}{145C59}
+\definecolor{closure}{HTML}{A74B24}
+
+\begin{document}
+\pgfplotstableread[col sep=comma]{weekly.csv}\weeklydata
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.8cm, height=5.7cm,
+  ybar=2pt, bar width=10pt, ymin=0, enlarge y limits={upper, value=0.13},
+  enlarge x limits=0.11,
+  ylabel={Số lượt}, xlabel={Ngày thứ Hai đầu tuần (UTC)},
+  xtick=data, xticklabels from table={\weeklydata}{week_start_utc},
+  xticklabel style={font=\scriptsize},
+  yticklabel style={font=\small},
+  ymajorgrids, grid style={gray!20}, tick align=outside,
+  legend style={at={(0.98,0.98)}, anchor=north east, draw=none, font=\small},
+  legend columns=2,
+]
+\addplot[draw=none, fill=creation] table[x expr=\coordindex, y=created] {\weeklydata};
+\addplot[draw=none, fill=closure] table[x expr=\coordindex, y=closed] {\weeklydata};
+\legend{Lượt tạo,Lượt đóng}
+\end{axis}
+\end{tikzpicture}
+\end{document}

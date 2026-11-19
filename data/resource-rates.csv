@@ -1,0 +1,7 @@
+role,rate_usd_per_hour
+INF,80
+DEV,90
+INT,110
+QA,70
+UAT,60
+IHIE,80

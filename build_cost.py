@@ -1,0 +1,200 @@
+"""Rebuild proposed labor costs from resource assumptions and the CPM outputs."""
+
+import argparse
+from collections import Counter
+import csv
+from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from build_schedule import ROOT, tex_call, tex_define
+
+
+ROLES = ("INF", "DEV", "INT", "QA", "UAT", "IHIE")
+HOURS_PER_DAY = 8
+
+
+@dataclass(frozen=True)
+class Allocation:
+    day: int
+    wbs: str
+    role: str
+    hours: int
+    rate: int
+
+    @property
+    def cost(self) -> int:
+        return self.hours * self.rate
+
+
+@dataclass(frozen=True)
+class DailyCost:
+    day: int
+    hours: int
+    cost: int
+    cumulative: int
+
+
+def read_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(encoding="utf-8", newline="") as stream:
+        return list(csv.DictReader(stream))
+
+
+def read_rates(path: Path) -> dict[str, int]:
+    rows = read_rows(path)
+    rates = {row["role"]: int(row["rate_usd_per_hour"]) for row in rows}
+    if len(rows) != len(ROLES) or rates.keys() != set(ROLES) or min(rates.values()) <= 0:
+        raise ValueError("Enter one positive USD/hour rate per role")
+    return rates
+
+
+def read_hours(path: Path) -> dict[str, dict[str, int]]:
+    rows = read_rows(path)
+    hours = {row["wbs"]: {role: int(row[role]) for role in ROLES} for row in rows}
+    if len(hours) != len(rows):
+        raise ValueError("Enter one row of resource hours per WBS code")
+    for wbs, by_role in hours.items():
+        if not any(by_role.values()) or any(not 0 <= h <= HOURS_PER_DAY for h in by_role.values()):
+            raise ValueError(f"WBS {wbs}: enter hours per role between 0 and 8, with some assigned work")
+    return hours
+
+
+def read_schedule(path: Path, wbs_codes: set[str]) -> dict[str, tuple[int, int]]:
+    rows = read_rows(path)
+    windows = {row["wbs"]: (int(row["es"]), int(row["ef"])) for row in rows}
+    if not windows or windows.keys() != wbs_codes or len(windows) != len(rows):
+        raise ValueError(f"{path.name}: schedule and resource plan must list the same WBS codes once")
+    for row in rows:
+        es, ef = windows[row["wbs"]]
+        if not 0 <= es < ef or ef - es != int(row["duration_days"]) or row["calendar"] != "LV":
+            raise ValueError(f"{path.name}: invalid LV schedule window for WBS {row['wbs']}")
+    return windows
+
+
+def allocate(windows: dict[str, tuple[int, int]], hours: dict[str, dict[str, int]],
+             rates: dict[str, int]) -> list[Allocation]:
+    allocations = []
+    role_load: Counter[tuple[int, str]] = Counter()
+    for wbs, (es, ef) in windows.items():
+        for day in range(es + 1, ef + 1):
+            for role, effort in hours[wbs].items():
+                if effort == 0:
+                    continue
+                role_load[day, role] += effort
+                if role_load[day, role] > HOURS_PER_DAY:
+                    raise ValueError(f"Day {day}: {role} exceeds {HOURS_PER_DAY} hours across packages")
+                allocations.append(Allocation(day, wbs, role, effort, rates[role]))
+    return sorted(allocations, key=lambda row: row.day)
+
+
+def summarize(allocations: list[Allocation]) -> list[DailyCost]:
+    hours: Counter[int] = Counter()
+    costs: Counter[int] = Counter()
+    for row in allocations:
+        hours[row.day] += row.hours
+        costs[row.day] += row.cost
+
+    cumulative = 0
+    daily = []
+    for day in range(1, max(costs) + 1):
+        cumulative += costs[day]
+        daily.append(DailyCost(day, hours[day], costs[day], cumulative))
+    return daily
+
+
+def money(value: int) -> str:
+    return f"{value:,}".replace(",", r"\,")
+
+
+def write_csv_outputs(directory: Path, scenarios: dict[str, list[Allocation]],
+                      daily: dict[str, list[DailyCost]]) -> None:
+    with (directory / "cost-allocations.csv").open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream, lineterminator="\n")
+        writer.writerow(("scenario", "day", "wbs", "role", "hours", "rate_usd_per_hour", "cost_usd"))
+        for name, rows in scenarios.items():
+            writer.writerows((name, r.day, r.wbs, r.role, r.hours, r.rate, r.cost) for r in rows)
+
+    with (directory / "cost-daily.csv").open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream, lineterminator="\n")
+        writer.writerow(("scenario", "day", "hours", "cost_usd", "cumulative_usd"))
+        for name, days in daily.items():
+            writer.writerows((name, d.day, d.hours, d.cost, d.cumulative) for d in days)
+
+
+def write_tex(path: Path, hours: dict[str, dict[str, int]], rates: dict[str, int],
+              daily: dict[str, list[DailyCost]], baseline_allocations: list[Allocation],
+              changed_rate: int) -> None:
+    base = daily["baseline"]
+    base_hours: Counter[str] = Counter()
+    for row in baseline_allocations:
+        base_hours[row.role] += row.hours
+
+    with path.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write("% Generated by build_cost.py from the resource tables and CPM outputs.\n")
+        tex_define(stream, "CostAssignmentHeading", [tex_call("CostAssignmentRow", "WBS", *ROLES)])
+        tex_define(stream, "CostAssignmentRows", [
+            tex_call("CostAssignmentRow", wbs, *(by_role[role] for role in ROLES))
+            for wbs, by_role in hours.items()
+        ])
+        for role in ROLES:
+            tex_define(stream, "CostRate" + role, [money(rates[role])])
+            tex_define(stream, "CostHours" + role, [str(base_hours[role])])
+            tex_define(stream, "CostTotal" + role, [money(base_hours[role] * rates[role])])
+        tex_define(stream, "CostBaseRows", [
+            tex_call("CostDailyRow", d.day, d.hours, money(d.cost), money(d.cumulative))
+            for d in base
+        ])
+        tex_define(stream, "CostBasePoints", ["(0,0) " + " ".join(
+            f"({d.day},{d.cumulative})" for d in base
+        )])
+        tex_define(stream, "CostChangedRate", [money(changed_rate)])
+        tex_define(stream, "CostUnitRateDifference", [money(changed_rate - rates["INT"])])
+        for name, prefix in (("baseline", "Base"), ("hl7-delay", "Delay"), ("hl7-rate", "Rate")):
+            days = daily[name]
+            tex_define(stream, "Cost" + prefix + "Days", [str(days[-1].day)])
+            tex_define(stream, "Cost" + prefix + "Hours", [str(sum(d.hours for d in days))])
+            tex_define(stream, "Cost" + prefix + "Total", [money(days[-1].cumulative)])
+            if prefix != "Base":
+                tex_define(stream, "Cost" + prefix + "Difference", [money(days[-1].cumulative - base[-1].cumulative)])
+        tex_define(stream, "CostDelayExtraHours", [str(
+            sum(d.hours for d in daily["hl7-delay"]) - sum(d.hours for d in base)
+        )])
+        base_total = base[-1].cumulative
+        rate_delta = daily["hl7-rate"][-1].cumulative - base_total
+        tex_define(stream, "CostRatePercent", [f"{100 * rate_delta / base_total:.2f}".replace(".", ",")])
+
+
+DEFAULT_HL7_RATE = 135
+
+
+def rebuild(outputs: Path, changed_rate: int = DEFAULT_HL7_RATE) -> None:
+    hours = read_hours(ROOT / "data/resource-hours.csv")
+    rates = read_rates(ROOT / "data/resource-rates.csv")
+    baseline = read_schedule(outputs / "schedule-baseline.csv", set(hours))
+    delayed = read_schedule(outputs / "schedule-hl7-delay.csv", set(hours))
+    scenarios = {
+        "baseline": allocate(baseline, hours, rates),
+        "hl7-delay": allocate(delayed, hours, rates),
+        "hl7-rate": allocate(baseline, hours, rates | {"INT": changed_rate}),
+    }
+    daily = {name: summarize(rows) for name, rows in scenarios.items()}
+    with TemporaryDirectory(dir=outputs) as directory:
+        staged = Path(directory)
+        write_csv_outputs(staged, scenarios, daily)
+        write_tex(staged / "cost.tex", hours, rates, daily, scenarios["baseline"], changed_rate)
+        for file in staged.iterdir():
+            file.replace(outputs / file.name)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--hl7-rate", type=int, default=DEFAULT_HL7_RATE,
+                        help="alternate INT rate in whole USD/hour")
+    args = parser.parse_args()
+    if args.hl7_rate <= 0:
+        parser.error("--hl7-rate must be positive")
+    rebuild(ROOT / "outputs", args.hl7_rate)
+
+
+if __name__ == "__main__":
+    main()
